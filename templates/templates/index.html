@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QR Attendance System</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📋 QR Attendance System</h1>
+      <p>Face-verified attendance tracking</p>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top: 0; color: var(--primary-color);">Welcome!</h2>
+      <p>This system uses QR codes and face verification to ensure accurate attendance tracking.</p>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top: 0;">👨‍🏫 For Teachers</h3>
+      <p>Manage attendance sessions, generate QR codes, and export attendance data.</p>
+      <a href="{{ url_for('teacher_login') }}" class="btn btn-primary">Login to Teacher Panel</a>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top: 0;">👨‍🎓 For Students</h3>
+      <p><strong>First time?</strong> You need to enroll your face before checking in.</p>
+      <a href="{{ url_for('enroll') }}" class="btn btn-success" style="margin-bottom: 1rem;">📸 Enroll Your Face</a>
+      <p style="margin-top: 1rem; color: var(--text-gray); font-size: 0.875rem;">
+        Already enrolled? Scan the QR code shown by your teacher to check in.
+      </p>
+    </div>
+
+    <div class="card" style="background: #f0f9ff; border-left: 4px solid var(--primary-color);">
+      <h3 style="margin-top: 0; color: var(--primary-color);">How It Works</h3>
+      <ol style="margin-left: 1.5rem; color: var(--text-gray);">
+        <li>Students enroll their face data (one-time setup)</li>
+        <li>Teacher starts an attendance session and displays QR code</li>
+        <li>Students scan QR code and verify their identity with face recognition</li>
+        <li>Attendance is recorded with verification status</li>
+      </ol>
+    </div>
+  </div>
+</body>
+
+</html>

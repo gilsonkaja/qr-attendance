@@ -1,0 +1,78 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Teacher Panel</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+      body{font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial; padding:2rem; max-width:900px;margin:auto;}
+      .grid{display:grid;grid-template-columns: 1fr 1fr; gap:1rem;}
+      .card{padding:1rem;border:1px solid #e6e6e6;border-radius:8px;}
+      .actions form{display:inline;}
+      table{width:100%;border-collapse:collapse}
+      th,td{border-bottom:1px solid #eee;padding:6px 8px;font-size:14px}
+      img.qr{width:220px;height:220px;border-radius:8px;border:1px solid #ddd}
+    </style>
+  </head>
+  <body>
+    <h1>Teacher Panel</h1>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <ul>
+        {% for cat,msg in messages %}
+          <li><strong>{{ cat }}:</strong> {{ msg }}</li>
+        {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
+    <div class="grid">
+      <div class="card">
+        <h3>Current Session</h3>
+        {% if token %}
+          <p><strong>Session ID:</strong> {{ token }}</p>
+          <p><strong>Created (UTC):</strong> {{ created_at }}</p>
+          <img class="qr" src="{{ url_for('session_qr') }}" alt="Session QR code" />
+          <p><a href="{{ checkin_url }}" target="_blank">Open check-in page</a></p>
+          <div class="actions">
+            <form method="post" action="{{ url_for('teacher_rotate') }}">
+              <button type="submit">Rotate token (new)</button>
+            </form>
+            <form method="post" action="{{ url_for('teacher_clear') }}" style="margin-left:6px;">
+              <button type="submit" onclick="return confirm('Clear all attendance records?')">Clear attendance</button>
+            </form>
+          </div>
+        {% else %}
+          <p>No active session.</p>
+          <form method="post" action="{{ url_for('teacher_start') }}">
+            <button type="submit">Start session</button>
+          </form>
+        {% endif %}
+        <hr/>
+        <p><a href="{{ url_for('teacher_export') }}">Export CSV</a> | <a href="{{ url_for('teacher_raw') }}">View raw JSON</a></p>
+      </div>
+
+      <div class="card">
+        <h3>Recent check-ins (most recent first)</h3>
+        <p>Total records: {{ total }}</p>
+        <table>
+          <thead><tr><th>Name</th><th>ID</th><th>Time (UTC)</th><th>Session</th></tr></thead>
+          <tbody>
+            {% for r in recent %}
+              <tr>
+                <td>{{ r.name }}</td>
+                <td>{{ r.student_id or "" }}</td>
+                <td>{{ r.timestamp }}</td>
+                <td style="font-family:monospace">{{ r.session_id }}</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="4">No records yet</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p style="margin-top:1rem"><a href="{{ url_for('index') }}">Home</a></p>
+  </body>
+</html>

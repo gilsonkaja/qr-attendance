@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Check-In Successful</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>✅ Check-In Successful!</h1>
+            <p>Your attendance has been recorded</p>
+        </div>
+
+        <div class="card" style="background: #d1fae5; border-left: 4px solid var(--success-color);">
+            <h2 style="margin-top: 0; color: var(--success-color);">Attendance Confirmed</h2>
+            <div style="margin-top: 1rem;">
+                <p><strong>Name:</strong> {{ entry.name }}</p>
+                <p><strong>Student ID:</strong> {{ entry.student_id }}</p>
+                <p><strong>Time:</strong> {{ entry.timestamp }}</p>
+                {% if entry.face_verified %}
+                <p><strong>Verification:</strong> <span style="color: var(--success-color);">✓ Face Verified</span></p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div style="text-align: center; margin-top: 2rem;">
+            <a href="{{ url_for('index') }}" class="btn btn-primary">Back to Home</a>
+        </div>
+    </div>
+</body>
+
+</html>

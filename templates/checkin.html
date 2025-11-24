@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Check In - QR Attendance</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>✓ Class Check-In</h1>
+      <p>Verify your identity to mark attendance</p>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    {% for category, message in messages %}
+    <div class="alert alert-{{ category }}">{{ message }}</div>
+    {% endfor %}
+    {% endif %}
+    {% endwith %}
+
+    {% if not valid %}
+    <div class="card">
+      <p style="color: var(--danger-color); text-align: center;">
+        ⚠️ This session is not active or the QR code has expired.<br>
+        Please inform your teacher.
+      </p>
+    </div>
+    <div style="text-align: center; margin-top: 1rem;">
+      <a href="{{ url_for('index') }}" class="btn btn-primary">Back to Home</a>
+    </div>
+    {% else %}
+    <div class="instructions">
+      <h3>Steps to Check In:</h3>
+      <ul>
+        <li>Enter your name and student ID</li>
+        <li>Position your face in the camera frame</li>
+        <li>Wait for face verification (green checkmark)</li>
+        <li>Speak the phrase for speech verification</li>
+        <li>Click "Submit Attendance" when verified</li>
+      </ul>
+    </div>
+
+    <form id="checkinForm" class="form-container" method="POST">
+      <div class="form-group">
+        <label for="name">Full Name *</label>
+        <input type="text" id="name" name="name" required placeholder="Enter your full name">
+      </div>
+
+      <div class="form-group">
+        <label for="student_id">Student ID *</label>
+        <input type="text" id="student_id" name="student_id" required placeholder="Enter your student ID">
+      </div>
+
+      <input type="hidden" name="session_id" value="{{ token }}">
+      <input type="hidden" id="faceVerified" name="face_verified" value="false">
+      <input type="hidden" id="voiceVerified" name="voice_verified" value="false">
+      <input type="hidden" id="verificationData" name="verification_data" value="">
+
+      <div class="camera-container" style="margin-top: 1.5rem;">
+        <video id="video" autoplay muted playsinline></video>
+        <canvas id="overlay" class="camera-overlay"></canvas>
+        <div id="faceStatus" class="face-status waiting">
+          <span class="spinner"></span>
+          <span>Initializing camera...</span>
+        </div>
+      </div>
+
+      <button type="submit" id="submitBtn" class="btn btn-primary btn-block" disabled style="margin-top: 1.5rem;">
+        <span id="btnText">Submit Attendance</span>
+      </button>
+
+      <div style="margin-top: 1rem; text-align: center;">
+        <a href="{{ url_for('index') }}" class="btn btn-secondary">Cancel</a>
+      </div>
+    </form>
+
+    <div class="card" style="margin-top: 1.5rem; background: #fffbeb; border-left: 4px solid var(--warning-color);">
+      <p style="margin: 0; color: var(--text-gray); font-size: 0.875rem;">
+        <strong>Not enrolled yet?</strong>
+        <a href="{{ url_for('enroll') }}" style="color: var(--primary-color);">Register your face here</a>
+      </p>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if valid %}
+  <script src="{{ url_for('static', filename='js/face-api.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/face-verification.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/voice-recorder.js') }}"></script>
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('overlay');
+    const faceStatus = document.getElementById('faceStatus');
+    const submitBtn = document.getElementById('submitBtn');
+    const studentIdInput = document.getElementById('student_id');
+    const faceVerifiedInput = document.getElementById('faceVerified');
+    const voiceVerifiedInput = document.getElementById('voiceVerified');
+    const verificationDataInput = document.getElementById('verificationData');
+    const checkinForm = document.getElementById('checkinForm');
+
+    // Add Speech UI dynamically
+    const cameraContainer = document.querySelector('.camera-container');
+    const speechContainer = document.createElement('div');
+    speechContainer.className = 'speech-container';
+    speechContainer.style.marginTop = '1.5rem';
+    speechContainer.style.textAlign = 'center';
+    speechContainer.innerHTML = `
+        <h3>🎤 Speech Verification</h3>
+        <p>Please speak this phrase clearly:</p>
+        <p id="targetPhrase" class="phrase" style="font-weight: bold; font-size: 1.2rem; margin: 1rem 0; color: var(--primary-color);">Loading...</p>
+        <button type="button" id="listenBtn" class="btn btn-secondary" disabled>Start Listening</button>
+        <div id="speechStatus" style="margin-top: 0.5rem; color: var(--text-gray);">Verify face first</div>
+        <div id="transcriptBox" style="margin-top: 1rem; padding: 1rem; background: #f5f5f5; border-radius: 8px; display: none;">
+            <div style="font-size: 0.875rem; color: var(--text-gray); margin-bottom: 0.5rem;">You said:</div>
+            <div id="transcript" style="font-style: italic;"></div>
+        </div>
+    `;
+    cameraContainer.parentNode.insertBefore(speechContainer, submitBtn);
+
+    const listenBtn = document.getElementById('listenBtn');
+    const speechStatus = document.getElementById('speechStatus');
+    const targetPhraseEl = document.getElementById('targetPhrase');
+    const transcriptBox = document.getElementById('transcriptBox');
+    const transcriptEl = document.getElementById('transcript');
+
+    const faceVerification = new FaceVerification();
+    const speechVerifier = new SpeechVerifier();
+
+    let detectionInterval = null;
+    let isFaceVerified = false;
+    let isSpeechVerified = false;
+    let storedDescriptor = null;
+
+    // Initialize speech verifier
+    try {
+      speechVerifier.init();
+      const phrase = speechVerifier.generatePhrase();
+      targetPhraseEl.textContent = `"${phrase}"`;
+    } catch (e) {
+      speechStatus.textContent = 'Speech recognition not supported';
+      speechStatus.style.color = 'var(--danger-color)';
+    }
+
+    // Update status message
+    function updateStatus(message, type = 'waiting') {
+      faceStatus.className = `face-status ${type}`;
+      faceStatus.innerHTML = type === 'waiting' ?
+        `<span class="spinner"></span><span>${message}</span>` :
+        `<span>${message}</span>`;
+    }
+
+    // Fetch stored face descriptor for student
+    async function fetchStoredDescriptor(studentId) {
+      try {
+        const response = await fetch(`/api/get_face_descriptor?student_id=${encodeURIComponent(studentId)}`);
+        const data = await response.json();
+
+        if (data.success && data.descriptor) {
+          return data.descriptor;
+        }
+        return null;
+      } catch (error) {
+        console.error('Error fetching descriptor:', error);
+        return null;
+      }
+    }
+
+    // Initialize
+    async function init() {
+      try {
+        updateStatus('Loading face recognition models...', 'waiting');
+        await faceVerification.loadModels();
+
+        updateStatus('Starting camera...', 'waiting');
+        await faceVerification.startVideo(video);
+
+        // Set canvas dimensions to match video
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+
+        updateStatus('Enter your Student ID first', 'detecting');
+
+      } catch (error) {
+        console.error('Initialization error:', error);
+        updateStatus(error.message, 'error');
+      }
+    }
+
+    // Start verification when student ID is entered
+    studentIdInput.addEventListener('blur', async () => {
+      const studentId = studentIdInput.value.trim();
+
+      if (!studentId) {
+        updateStatus('Enter your Student ID first', 'detecting');
+        return;
+      }
+
+      updateStatus('Looking up your face data...', 'waiting');
+
+      storedDescriptor = await fetchStoredDescriptor(studentId);
+
+      if (!storedDescriptor) {
+        updateStatus('⚠️ Not enrolled! Please register first', 'error');
+        submitBtn.disabled = true;
+        isFaceVerified = false;
+        return;
+      }
+
+      updateStatus('Position your face in the frame', 'detecting');
+
+      // Start continuous verification
+      if (detectionInterval) {
+        faceVerification.stopContinuousDetection(detectionInterval);
+      }
+      detectionInterval = faceVerification.startContinuousDetection(onDetection, 500);
+    });
+
+    // Handle face detection and verification
+    async function onDetection(detection) {
+      if (!storedDescriptor) return;
+
+      if (detection) {
+        // Draw detection box
+        faceVerification.drawDetection(detection, canvas);
+
+        // Verify face
+        const result = await faceVerification.verifyFace(storedDescriptor);
+
+        if (result.verified) {
+          if (!isFaceVerified) {
+            isFaceVerified = true;
+            updateStatus(`✓ Face Verified (${result.confidence}% match)`, 'verified');
+            faceVerifiedInput.value = 'true';
+            verificationDataInput.value = JSON.stringify({
+              confidence: result.confidence,
+              distance: result.distance
+            });
+
+            // Enable speech verification
+            listenBtn.disabled = false;
+            speechStatus.textContent = 'Face verified! Now speak the phrase.';
+            speechStatus.style.color = 'var(--primary-color)';
+          }
+        } else {
+          isFaceVerified = false;
+          updateStatus(`⚠️ Face mismatch (${result.confidence}% match)`, 'error');
+          faceVerifiedInput.value = 'false';
+          listenBtn.disabled = true;
+          speechStatus.textContent = 'Verify face first';
+          speechStatus.style.color = 'var(--text-gray)';
+        }
+      } else {
+        isFaceVerified = false;
+        updateStatus('No face detected - Please position your face', 'detecting');
+        faceVerifiedInput.value = 'false';
+        listenBtn.disabled = true;
+
+        // Clear canvas
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+      checkReady();
+    }
+
+    // Speech Verification Logic
+    listenBtn.addEventListener('click', async () => {
+      if (!speechVerifier.isListening) {
+        listenBtn.disabled = true;
+        listenBtn.textContent = 'Listening...';
+        listenBtn.className = 'btn btn-primary';
+        speechStatus.textContent = '🎙️ Listening... Speak now!';
+        speechStatus.style.color = 'var(--primary-color)';
+        transcriptBox.style.display = 'none';
+
+        speechVerifier.startListening(
+          async (result) => {
+            // Success
+            transcriptEl.textContent = `"${result.transcript}"`;
+            transcriptBox.style.display = 'block';
+
+            // Send to server for verification
+            const formData = new FormData();
+            formData.append('student_id', studentIdInput.value);
+            formData.append('speech_verified', result.matched ? 'true' : 'false');
+
+            try {
+              const response = await fetch('/api/verify_voice', {
+                method: 'POST',
+                body: formData
+              });
+              const serverResult = await response.json();
+
+              if (serverResult.success && serverResult.verified) {
+                isSpeechVerified = true;
+                voiceVerifiedInput.value = 'true';
+                listenBtn.textContent = '✓ Speech Verified';
+                listenBtn.className = 'btn btn-success';
+                speechStatus.textContent = `✓ Verified! (${Math.round(result.matchPercentage)}% match)`;
+                speechStatus.style.color = 'var(--success-color)';
+              } else {
+                isSpeechVerified = false;
+                voiceVerifiedInput.value = 'false';
+                listenBtn.textContent = 'Try Again';
+                listenBtn.className = 'btn btn-warning';
+                listenBtn.disabled = false;
+                speechStatus.textContent = `❌ Didn't match (${Math.round(result.matchPercentage)}%)`;
+                speechStatus.style.color = 'var(--danger-color)';
+              }
+            } catch (error) {
+              console.error('Speech verification error:', error);
+              listenBtn.textContent = 'Try Again';
+              listenBtn.className = 'btn btn-secondary';
+              listenBtn.disabled = false;
+              speechStatus.textContent = 'Error verifying speech';
+              speechStatus.style.color = 'var(--danger-color)';
+            }
+            checkReady();
+          },
+          (error) => {
+            // Error
+            listenBtn.textContent = 'Try Again';
+            listenBtn.className = 'btn btn-secondary';
+            listenBtn.disabled = false;
+            speechStatus.textContent = `Error: ${error}`;
+            speechStatus.style.color = 'var(--danger-color)';
+          }
+        );
+      }
+    });
+
+    function checkReady() {
+      if (isFaceVerified && isSpeechVerified) {
+        submitBtn.disabled = false;
+        document.getElementById('btnText').textContent = 'Submit Attendance';
+      } else {
+        submitBtn.disabled = true;
+        if (!isFaceVerified) {
+          document.getElementById('btnText').textContent = 'Verify Face First';
+        } else if (!isSpeechVerified) {
+          document.getElementById('btnText').textContent = 'Verify Speech Next';
+        }
+      }
+    }
+
+    // Handle form submission
+    checkinForm.addEventListener('submit', (e) => {
+      if (!isFaceVerified || !isSpeechVerified) {
+        e.preventDefault();
+        alert('Please complete both face and speech verification.');
+        return;
+      }
+    });
+
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', () => {
+      if (detectionInterval) {
+        faceVerification.stopContinuousDetection(detectionInterval);
+      }
+      faceVerification.stopVideo();
+    });
+
+    // Start initialization
+    init();
+  </script>
+  {% endif %}
+</body>
+
+</html>
